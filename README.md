@@ -30,7 +30,7 @@ Open the link and click a sample report, then click **Review report**.
 | --- | --- | --- | --- |
 | Typical case | Detailed slip-and-fall report (aisle 6, leaking cooler, bruised knee, urgent care, witness, camera) → Review report | Found 10 key facts, each linked to its source sentence, and flagged the camera wording as uncertain. However, it said "warning sign mentioned" when the report says there was *no* sign, gave generic labels for the injury and treatment, missed gaps such as the customer's name and last floor inspection, and produced one awkward follow-up question. | Partial |
 | Challenge case | Unclear/conflicting sample (two different times, "possibly slipped on water," no treatment and then a clinic visit, sign present vs. not seen) → Review report | Correctly flagged all 3 conflicts (time, injury/treatment, warning sign) and 2 vague statements, with useful follow-up questions. However, the Key facts section still listed disputed details (2:15 p.m., "water," "warning sign mentioned") as *Stated in report*, which contradicts the conflict flags below. | Partial |
-| Invalid or empty case | Cleared the text box and clicked Review report | UPDATE: describe what happened | UPDATE: Pass / Fail |
+| Invalid or empty case | Cleared the text box and clicked Review report | Showed the message "Add an incident report before starting a review." No results were generated, and the user could paste a report or load a sample and continue. | Pass |
 
 **Extra test (missing information sample):** The app found 6 facts and flagged 4 missing items (medical treatment, witnesses, video, warning sign), each with a follow-up question. It treated the vague "yesterday" and "afternoon" as facts and did not flag the missing shopper name. Result: partial.
 
