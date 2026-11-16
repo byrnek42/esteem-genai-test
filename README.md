@@ -12,7 +12,7 @@ No login is needed. Click a sample report (or paste your own), then click **Revi
 
 ## Demo Video
 
-**Google Drive (draft demo):** ✏️ *ADD LINK HERE* (viewing access granted to Emelia Hughes and Samuel Huang)
+**Google Drive (demo):** https://drive.google.com/file/d/1IO5UkEV3c8-DY3Jkglk8Al-JCT4z9m_8/view?usp=sharing
 
 ## Milestone documents
 
