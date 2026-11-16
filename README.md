@@ -1,42 +1,54 @@
 # ClaimLens
 
-**ClaimLens helps grocery-store claims managers do a faster, more complete first review of a new general liability incident report by pulling out key facts, flagging missing or conflicting information and suggesting follow-up questions.**
+**ClaimLens helps grocery-store claims managers do a faster, more complete first review of a new general-liability incident report. It pulls out key facts, flags missing, uncertain or conflicting information, and suggests the follow-up question for each gap.**
 
-## What the first working slice does
+**Intended user:** a claims manager (or store manager) reviewing a customer incident report such as a slip-and-fall, before deciding what to confirm next. ClaimLens does not score risk or make claim decisions.
 
-1. The user pastes an incident report into the text box, or loads one of three sample reports (Detailed, Missing information, Unclear / conflicting).
-2. The user clicks **Review report**.
-3. The app shows a structured review:
-   - **Key facts** (labelled *Stated in report*), each with the source sentence it came from
-   - **Missing or unclear information** (labelled *Information to confirm*), including conflicting statements and vague wording
+## Working prototype
+
+**Replit:** https://claim-lens-incident-review.replit.app
+
+No login is needed. Click a sample report (or paste your own), then click **Review report**. Open **How this review works** under the button to see what is working, simulated and planned.
+
+## Demo Video
+
+**Google Drive (draft demo):** ✏️ *ADD LINK HERE* (viewing access granted to Emelia Hughes and Samuel Huang)
+
+## Milestone documents
+
+| Component | Link |
+| --- | --- |
+| Revision: priority improvements, peer feedback response, five test cases, before/after, interpretation, risk response, limitations and next priorities | [docs/revision.md](docs/revision.md) |
+| Draft AI-use disclosure | [docs/ai-use-disclosure.md](docs/ai-use-disclosure.md) |
+| Test inputs, raw before/after outputs, screenshots | [docs/evidence/](docs/evidence/) |
+| Demo speaking notes | [docs/demo-script.md](docs/demo-script.md) |
+
+## How it works
+
+1. The user pastes an incident report or loads a sample (Detailed, Missing information, Unclear / conflicting).
+2. **Review report** produces:
+   - a **review status** banner counting items to confirm before relying on the review
+   - **Key facts**, each with the actual detail and its source sentence, tagged *Stated in report*, *Uncertain – confirm* or *Conflicting – confirm*
+   - **Missing or unclear information**, each linked to the question that resolves it
    - **Suggested follow-up questions**
-4. The user can **Keep, Edit or Dismiss** each item.
+3. The user can **Keep, Edit or Dismiss** any item.
 
-## How to open the prototype
+### AI: working vs. simulated vs. planned
 
-**Replit link:** https://claim-lens-incident-review.replit.app
+- **Working:** the full user flow, source sentences, tags, linked questions, status banner, Keep/Edit/Dismiss and input checks.
+- **Simulated:** the "AI" is rule-based keyword and pattern matching for 12 claim details (date, time, store, location, cause, injury, treatment, witnesses, video, warning sign, injured person's name, last floor inspection), with negation and conflict handling. Questions come from templates. No AI model or API is connected, and no data is sent or stored.
+- **Planned:** a language model that reads reports in any writing style and returns the same structured output with source sentences.
 
-Open the link and click a sample report, then click **Review report**.
+## Code
 
-## AI behavior: working vs. simulated
+The running app lives in Replit. This repository holds a copy of the code:
 
-- **Intended future AI:** A language model would read free-text incident reports written in many different styles. It would extract and summarize the key facts, link each one to its supporting wording, identify gaps and contradictions and generate follow-up questions tailored to the incident.
-- **Working now:** The full user flow works in the browser: entering a report, the review display, source sentences, Keep/Edit/Dismiss and error handling.
-- **Simulated:** The "AI" is rule-based. It uses keyword and pattern matching against a checklist (date, time, store, location, cause, injury, medical treatment, witnesses, video, warning signs) plus simple conflict and vague-wording checks. Follow-up questions come from templates. No AI model or API is connected, and no data is saved or sent anywhere.
+- [`GitHub-upload/artifacts/claimlens/src/lib/analyze.ts`](GitHub-upload/artifacts/claimlens/src/lib/analyze.ts): simulated review engine (revised)
+- [`GitHub-upload/artifacts/claimlens/src/App.tsx`](GitHub-upload/artifacts/claimlens/src/App.tsx): user interface
+- [`GitHub-upload/artifacts/claimlens/src/index.css`](GitHub-upload/artifacts/claimlens/src/index.css): styles
 
-## Test results
+## Previous milestone
 
-| Test | Input or action | What happened | Pass, partial, or fail |
-| --- | --- | --- | --- |
-| Typical case | Detailed slip-and-fall report (aisle 6, leaking cooler, bruised knee, urgent care, witness, camera) → Review report | Found 10 key facts, each linked to its source sentence, and flagged the camera wording as uncertain. However, it said "warning sign mentioned" when the report says there was *no* sign, gave generic labels for the injury and treatment, missed gaps such as the customer's name and last floor inspection, and produced one awkward follow-up question. | Partial |
-| Challenge case | Unclear/conflicting sample (two different times, "possibly slipped on water," no treatment and then a clinic visit, sign present vs. not seen) → Review report | Correctly flagged all 3 conflicts (time, injury/treatment, warning sign) and 2 vague statements, with useful follow-up questions. However, the Key facts section still listed disputed details (2:15 p.m., "water," "warning sign mentioned") as *Stated in report*, which contradicts the conflict flags below. | Partial |
-| Invalid or empty case | Cleared the text box and clicked Review report | Showed the message "Add an incident report before starting a review." No results were generated, and the user could paste a report or load a sample and continue. | Pass |
+The First Working Slice tests and known limitations are kept in this repository's history ([commit d83bd06](https://github.com/byrnek42/esteem-genai-test/blob/d83bd06/README.md)). The revision addresses all three of its known limitations. See [docs/revision.md](docs/revision.md).
 
-**Extra test (missing information sample):** The app found 6 facts and flagged 4 missing items (medical treatment, witnesses, video, warning sign), each with a follow-up question. It treated the vague "yesterday" and "afternoon" as facts and did not flag the missing shopper name. Result: partial.
-
-## Known limitations
-
-1. **Simulated AI mislabels some facts.** Keyword matching can get facts backwards. For example, it reported "warning sign mentioned" when the report said there was *no* sign. Facts also use generic labels ("Injury or condition noted") instead of the actual detail ("bruised left knee").
-2. **Conflicting details still appear as facts.** When a report contradicts itself, the app flags the conflict but still lists one version under Key facts as "Stated in report." Next step: mark disputed facts as "Conflicting – confirm."
-3. **Gaps and questions are incomplete and generic.** It misses important gaps (such as the injured person's name, store number and last floor inspection), and the follow-up questions come from templates and can read awkwardly. No data is saved between sessions.
-
+All reports in this repository are synthetic.

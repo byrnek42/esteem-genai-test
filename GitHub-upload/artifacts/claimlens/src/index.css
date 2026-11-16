@@ -462,3 +462,18 @@ button { cursor: pointer; }
     inset: -1px;
   }
 }
+
+/* Revision 2: missing badge, linked follow-ups, review status, how-it-works panel */
+.badge-missing { background:#e9edf1;color:#516f7c; }
+.link-note { color:#516f7c;font-size:11.5px;line-height:1.5;margin:6px 0 0; }
+.review-status { display:flex;gap:11px;align-items:flex-start;border-radius:12px;padding:13px 16px;margin-bottom:15px;font-size:12px;line-height:1.5; }
+.review-status svg { flex:none;margin-top:2px; }
+.review-status strong { display:block;font-size:13px; }
+.review-status span { display:block;opacity:.85; }
+.review-status.needs-check { background:#fbf1e6;border:1px solid #ecd6b8;color:#7d5526; }
+.review-status.clear { background:#e7efe9;border:1px solid #cfe0d4;color:#3d6853; }
+.how-panel { margin-top:14px;border:1px solid #e2ded3;border-radius:9px;background:#f5f3ec;padding:10px 13px;font-size:11.5px;color:#5c6962; }
+.how-panel summary { cursor:pointer;font-weight:600;color:#3f524c; }
+.how-panel dl { margin:10px 0 2px; }
+.how-panel dt { font:10px var(--app-font-mono);text-transform:uppercase;letter-spacing:.08em;color:#879188;margin-top:8px; }
+.how-panel dd { margin:3px 0 0;line-height:1.55; }

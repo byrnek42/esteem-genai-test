@@ -12,109 +12,17 @@ import {
   useLocation,
   Router as WouterRouter,
 } from 'wouter';
+import { analyzeReport, isLikelyIncidentReport, samples, type ItemKind, type ReviewItem } from '@/lib/analyze';
 
 const queryClient = new QueryClient();
 
-type ItemKind = 'fact' | 'finding' | 'question';
-type ReviewItem = {
-  id: string;
-  kind: ItemKind;
-  label: string;
-  text: string;
-  evidence: string;
-  tag: 'Stated in report' | 'Information to confirm';
-  status: 'open' | 'kept' | 'dismissed';
-  relatedId?: string;
+const badgeClass: Record<ReviewItem['tag'], string> = {
+  'Stated in report': 'badge-stated',
+  'Uncertain – confirm': 'badge-confirm',
+  'Conflicting – confirm': 'badge-unclear',
+  'Missing – ask': 'badge-missing',
 };
 
-const samples = {
-  Detailed: `On March 14, 2025, at approximately 10:35 a.m., I was shopping at Greenway Market on 8th Street. I slipped on a puddle near the dairy coolers in aisle 6. The floor was wet from a leaking refrigerator case, and there was no warning sign nearby. I bruised my left knee and reported the incident to the service desk. An employee called an ambulance, and I was examined at Northside Urgent Care that afternoon. A customer named Lila Chen saw me fall and gave her contact information to the manager. The ceiling camera above aisle 6 should have recorded the incident.`,
-  'Missing information': `A shopper slipped near the produce department at our Greenway Market yesterday afternoon. They said the floor felt slick and their wrist hurt afterward. A cashier helped them sit down, but they left before the manager could finish the incident form.`,
-  'Unclear / conflicting': `On April 6, 2025, I fell by the bakery at Greenway Market around 2:15 p.m. I think it was closer to 4:00 p.m., though I am not sure. I possibly slipped on water, but the floor may have been dry. I hurt my shoulder and did not need treatment. Later I went to the clinic because my shoulder was painful. A wet floor sign was there; I did not see any warning sign before the fall.`
-} as const;
-
-const categories: { key: string; label: string; test: RegExp; describe: (sentence: string) => string }[] = [
-  { key: 'date', label: 'Date', test: /\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:,?\s+\d{4})?|yesterday|today|last\s+(?:night|monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i, describe: () => 'Incident date recorded' },
-  { key: 'time', label: 'Time', test: /\b\d{1,2}:\d{2}(?:\s*[ap]\.?m\.?)?|\b\d{1,2}\s*[ap]\.?m\.?|\b(?:morning|afternoon|evening|noon|midnight)\b/i, describe: () => 'Time of incident recorded' },
-  { key: 'store', label: 'Store', test: /\b(?:at|inside|in)\s+(?:the\s+)?[A-Z][\w'&-]*(?:\s+[A-Z][\w'&-]*){0,3}\s+(?:Market|Grocery|Foods|Store|Supermarket)\b|\bstore\s*#?\s*\d+\b|\b(?:our|the)\s+(?:store|market|grocery)\b|\b(?:Greenway Market|grocery store|supermarket)\b/i, describe: () => 'Store identified' },
-  { key: 'location', label: 'Location in store', test: /\baisle\s*\d+\b|\b(?:near|by|beside|inside|at|in)\s+(?:the\s+)?(?:produce|bakery|dairy|freezer|entrance|checkout|register|restroom|cooler|coolers|shelf|stockroom|meat|seafood|deli|pharmacy|[a-z]+\s+department)\b|\b(?:produce|bakery|dairy|checkout|entrance|register)\s+(?:department|area)\b/i, describe: (s) => `Area described: ${s.match(/(?:aisle\s*\d*|produce|bakery|dairy|freezer|entrance|checkout|register|restroom|coolers?|deli|pharmacy|seafood|meat)(?:\s+\d+)?/i)?.[0] ?? 'Store area mentioned'}` },
-  { key: 'cause', label: 'Cause', test: /\b(?:puddle|water|spill(?:ed)?|leak(?:ing|ed)?|wet|slick|slippery|obstacle|uneven|loose mat|collision|hit by|struck by|object fell|tripped over)\b/i, describe: (s) => `Reported condition: ${s.match(/\b(?:puddle|water|spill(?:ed)?|leak(?:ing|ed)?|wet|slick|slippery|obstacle|uneven|loose mat|collision|hit by|struck by|object fell|tripped over)\b/i)?.[0] ?? 'Condition described'}` },
-  { key: 'injury', label: 'Injury', test: /\b(?:injur(?:y|ed|ies)|hurt|pain(?:ful)?|sore|bruise[ds]?|cut|swel(?:ling|led)|fracture[ds]?|sprain(?:ed)?|wound|no injury|not injured|unhurt)\b/i, describe: () => 'Injury or condition noted' },
-  { key: 'treatment', label: 'Medical treatment', test: /\b(?:doctor|physician|hospital|urgent care|clinic|ambulance|paramedic|medical treatment|treated|treatment|emergency room|er\b|first aid|did not need treatment|no treatment)\b/i, describe: () => 'Treatment or care mentioned' },
-  { key: 'witnesses', label: 'Witnesses', test: /\b(?:witness(?:ed|es)?|saw me|saw the (?:incident|fall|customer)|watched me|contact information)\b/i, describe: () => 'Witness or potential witness mentioned' },
-  { key: 'video', label: 'Video', test: /\b(?:camera|cctv|video|footage|record(?:ed|ing)|surveillance)\b/i, describe: () => 'Video or recording mentioned' },
-  { key: 'warning', label: 'Warning signs', test: /\b(?:warning sign|wet floor sign|caution sign|cone|signage|no sign|without a sign|did not see any warning|warning was|sign was)\b/i, describe: () => 'Warning sign or notice mentioned' }
-];
-
-function sentencesOf(report: string) {
-  // Protect time abbreviations so the evidence remains a complete source sentence.
-  const protectedReport = report.replace(/\b[ap]\.m\./gi, (time) => time.replace(/\./g, '∯'));
-  return protectedReport.match(/[^.!?\n]+(?:[.!?]+|$)/g)?.map((s) => s.replace(/∯/g, '.').trim()).filter(Boolean) ?? [];
-}
-
-function analyzeReport(report: string): ReviewItem[] {
-  const sentences = sentencesOf(report);
-  const items: ReviewItem[] = [];
-  const makeId = (base: string, index: number) => `${base}-${index}`;
-  const findings: ReviewItem[] = [];
-
-  categories.forEach((category) => {
-    const evidence = sentences.find((sentence) => category.test.test(sentence));
-    if (evidence) {
-      const text = ['date', 'time', 'store'].includes(category.key)
-        ? evidence.match(category.test)?.[0] ?? category.describe(evidence)
-        : category.describe(evidence);
-      items.push({ id: makeId(category.key, items.length), kind: 'fact', label: category.label, text, evidence, tag: 'Stated in report', status: 'open' });
-    } else {
-      const finding: ReviewItem = {
-        id: makeId(`missing-${category.key}`, findings.length), kind: 'finding', label: `${category.label} not specified`,
-        text: `The report does not identify the ${category.label.toLowerCase()}.`, evidence: '', tag: 'Information to confirm', status: 'open'
-      };
-      findings.push(finding);
-    }
-  });
-
-  const comparisons: { label: string; first: RegExp; second: RegExp; prompt: string }[] = [
-    { label: 'Conflicting incident time', first: /\b(?:\d{1,2}(?::\d{2})?\s*a\.?m\.?|morning)\b/i, second: /\b(?:\d{1,2}(?::\d{2})?\s*p\.?m\.?|afternoon|evening)\b/i, prompt: 'Which time is correct, and can it be verified from a receipt, schedule, or camera record?' },
-    { label: 'Conflicting floor condition', first: /\b(?:wet|water|puddle|slick|spill|leak)\b/i, second: /\b(?:dry|not wet|no water)\b/i, prompt: 'Was the floor wet or dry at the time of the incident?' },
-    { label: 'Conflicting injury or treatment details', first: /\b(?:no injury|not injured|did not need treatment|no treatment)\b/i, second: /\b(?:hurt|pain|injur|clinic|doctor|hospital|treated)\b/i, prompt: 'Could you clarify the injury and whether any medical care was received?' },
-    { label: 'Conflicting warning-sign details', first: /\b(?:no sign|without a sign|did not see any warning|no warning)\b/i, second: /\b(?:sign was there|warning sign was|wet floor sign was|caution sign)\b/i, prompt: 'Was a warning sign present before the incident, and where was it placed?' }
-  ];
-  comparisons.forEach((comparison) => {
-    if (comparison.label === 'Conflicting incident time') {
-      const timeSentences = sentences.filter((sentence) => /\b(?:incident|slipped|fell|fall|around|closer to|not sure)\b/i.test(sentence));
-      const times = timeSentences.flatMap((sentence) => sentence.match(/\b\d{1,2}(?::\d{2})?\s*[ap]\.?m\.?/gi) ?? []);
-      if (new Set(times.map((time) => time.replace(/[.\s]/g, '').toLowerCase())).size > 1) {
-        findings.push({ id: makeId('conflict', findings.length), kind: 'finding', label: comparison.label, text: 'Different possible incident times are stated. Confirm which time refers to the incident.', evidence: timeSentences.filter((sentence) => /\d{1,2}(?::\d{2})?\s*[ap]\.?m\.?/i.test(sentence)).join(' '), tag: 'Information to confirm', status: 'open' });
-      }
-      return;
-    }
-    const first = sentences.find((s) => comparison.first.test(s));
-    const second = sentences.find((s) => comparison.second.test(s) && (s !== first || comparison.label === 'Conflicting warning-sign details'));
-    if (first && second) {
-      findings.push({ id: makeId('conflict', findings.length), kind: 'finding', label: comparison.label, text: 'These statements may need clarification; they are not treated as a decision.', evidence: first === second ? first : `${first} ${second}`, tag: 'Information to confirm', status: 'open' });
-    }
-  });
-
-  sentences.forEach((sentence, index) => {
-    if (/\b(?:possibly|maybe|perhaps|not sure|unsure|I think|I believe|might have|may have|could have|should have|seems like|around\s+(?:then|that time))\b/i.test(sentence)) {
-      findings.push({ id: makeId('vague', index), kind: 'finding', label: 'Uncertain or vague wording', text: 'This detail is expressed as uncertain and needs confirmation.', evidence: sentence, tag: 'Information to confirm', status: 'open' });
-    }
-  });
-  findings.forEach((finding) => items.push(finding));
-  findings.forEach((finding, index) => {
-    const associated = categories.find((category) => finding.id.includes(category.key));
-    const question = associated
-      ? `Can you confirm the ${associated.label.toLowerCase()} for this incident?`
-      : finding.label === 'Conflicting incident time' ? comparisons[0].prompt
-      : finding.label === 'Conflicting floor condition' ? comparisons[1].prompt
-      : finding.label === 'Conflicting injury or treatment details' ? comparisons[2].prompt
-      : finding.label === 'Conflicting warning-sign details' ? comparisons[3].prompt
-      : `Could you clarify what you mean by “${finding.evidence.match(/\b(?:possibly|maybe|perhaps|not sure|unsure|I think|I believe|might have|may have|could have)\b/i)?.[0] ?? 'this detail'}” and what you observed directly?`;
-    items.push({ id: makeId('question', index), kind: 'question', label: `Follow-up · ${finding.label}`, text: question, evidence: finding.evidence, tag: finding.tag, status: 'open', relatedId: finding.id });
-  });
-  return items;
-}
 
 function Home() {
   const [report, setReport] = useState('');
@@ -133,15 +41,13 @@ function Home() {
       setError('Add an incident report before starting a review.');
       return;
     }
-    const eventSignals = /\b(?:slip(?:ped|ping)?|trip(?:ped|ping)?|fell|injur(?:y|ed|ies)|hurt|collision|struck)\b/i;
-    const fallWithContext = /\bfall\b/i.test(report) && /\b(?:incident|customer|shopper|employee|person|suffered|experienced)\b/i.test(report);
-    if ((!eventSignals.test(report) && !fallWithContext) || report.trim().split(/\s+/).length < 4) {
+    if (!isLikelyIncidentReport(report)) {
       setItems(null);
-      setError('This does not look like a grocery-store incident report. Include what happened and where it happened in the store.');
+      setError('This does not look like a grocery-store incident report. Describe what happened (for example, a slip or fall) and where in the store, or load a sample report above to see how a review works.');
       return;
     }
     setItems(analyzeReport(report));
-    setNotice('Report review ready. Findings are based only on the text provided.');
+    setNotice('Report review ready. Findings are based only on the text provided. Confirm flagged items before relying on this review.');
   };
   const loadSample = (name: keyof typeof samples) => {
     setReport(samples[name]);
@@ -171,7 +77,7 @@ function Home() {
     <article className="result-item" key={item.id} data-testid={`result-item-${item.id}`}>
       <div className="item-topline">
         <span className="item-label" data-testid={`text-item-label-${item.id}`}>{item.label}</span>
-        <span className={`item-badge ${item.tag === 'Stated in report' ? 'badge-stated' : item.tag === 'Information to confirm' ? 'badge-confirm' : 'badge-unclear'}`} data-testid={`status-item-tag-${item.id}`}>{item.tag}</span>
+        <span className={`item-badge ${badgeClass[item.tag]}`} data-testid={`status-item-tag-${item.id}`}>{item.tag}</span>
       </div>
       {editingId === item.id ? (
         <div>
@@ -186,6 +92,11 @@ function Home() {
         <>
           <p className="evidence" data-testid={`text-item-body-${item.id}`}><span>{item.text}</span></p>
           {item.evidence && <p className="evidence" style={{ marginTop: 7 }} data-testid={`text-source-${item.id}`}><span className="evidence-label">Source</span>“{item.evidence}”</p>}
+          {item.linkText && (
+            <p className="link-note" data-testid={`text-link-${item.id}`}>
+              <span className="evidence-label">{item.kind === 'question' ? 'Resolves' : 'Ask'}</span>{item.linkText}
+            </p>
+          )}
         </>
       )}
       <div className="item-actions" aria-label={`Actions for ${item.label}`}>
@@ -217,7 +128,7 @@ function Home() {
         <div className="brand-lockup"><span className="brand-mark"><ShieldCheck size={19} strokeWidth={1.8} /></span><div><div className="brand-name">ClaimLens</div><div className="brand-caption">Incident review workbench</div></div></div>
         <div className="topbar-meta"><span className="live-dot" /> Client-side prototype</div>
       </header>
-      <div className="prototype-banner" role="note" data-testid="banner-prototype"><Info size={14} /> Prototype: AI review is simulated. Does not score risk or make decisions.</div>
+      <div className="prototype-banner" role="note" data-testid="banner-prototype"><Info size={14} /> Prototype: the AI review is simulated with rules (no AI model is connected). It does not score risk or make claim decisions.</div>
       <main className="page-wrap">
         <div className="page-intro">
           <div><div className="eyebrow">Claims desk / New report</div><h1 className="page-title">Read the report.<br />See what’s missing.</h1><p className="intro-copy">Review the details as written, preserve their source, and separate stated facts from the questions still to ask.</p></div>
@@ -237,6 +148,17 @@ function Home() {
             <button type="button" className="review-button" onClick={review} data-testid="button-review-report"><Sparkles size={15} /> Review report <ArrowUpRight size={14} /></button>
             {error && <div className="error-message" role="alert" data-testid="error-review">{error}</div>}
             <p className="helper-note"><Info size={13} /> Review is local and deterministic. The report is not sent anywhere.</p>
+            <details className="how-panel" data-testid="panel-how-it-works">
+              <summary>How this review works: working, simulated, planned</summary>
+              <dl>
+                <dt>Working now</dt>
+                <dd>Entering a report, the structured review, source sentences, links between gaps and follow-up questions, Keep / Edit / Dismiss, and input checks.</dd>
+                <dt>Simulated</dt>
+                <dd>The “AI” is a set of keyword and pattern rules for 12 claim details (date, time, store, location, cause, injury, treatment, witnesses, video, warning sign, injured person, last inspection). It handles wording it was written for, such as “no warning sign”, but it can miss facts written in unexpected ways.</dd>
+                <dt>Planned</dt>
+                <dd>A language model would read reports in any writing style, catch details the rules miss, and write follow-up questions for the specific incident. Every output would still link to its source sentence for you to check.</dd>
+              </dl>
+            </details>
           </section>
           <div className="results-column">
             <div className="results-header"><div><div className="panel-kicker">02 / Review notes</div><h2>What we found</h2></div><span className="results-meta">{items ? 'Review complete' : 'Awaiting report'}</span></div>
@@ -246,6 +168,22 @@ function Home() {
               </div>
             ) : (
               <>
+                {(() => {
+                  const open = (tag: ReviewItem['tag']) => items.filter((item) => item.kind === 'finding' && item.tag === tag && item.status !== 'dismissed').length;
+                  const conflicts = open('Conflicting – confirm');
+                  const uncertain = open('Uncertain – confirm');
+                  const missing = open('Missing – ask');
+                  const total = conflicts + uncertain + missing;
+                  return (
+                    <div className={`review-status ${total ? 'needs-check' : 'clear'}`} role="status" data-testid="status-review-summary">
+                      {total ? <AlertTriangle size={15} /> : <CheckCircle2 size={15} />}
+                      <div>
+                        <strong>{total ? `${total} item${total === 1 ? '' : 's'} to confirm before relying on this review` : 'No open items flagged'}</strong>
+                        <span>{conflicts} conflicting · {uncertain} uncertain · {missing} missing{total ? '. Only details tagged “Stated in report” appear without a warning.' : '. The rules can still miss details. Check the source report.'}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
                 {section('fact', 'Key facts', <CheckCircle2 size={15} />, shownItems('fact').length)}
                 {section('finding', 'Missing or unclear information', <AlertTriangle size={15} />, shownItems('finding').length, 'caution')}
                 {section('question', 'Suggested follow-up questions', <MessageCircleQuestion size={15} />, shownItems('question').length, 'question')}
